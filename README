@@ -1,0 +1,12 @@
+
+This is the d_source file wizard for the Code::Blocks IDE. This code 
+implements a "D source" option in the "New File" dialog box that pops up
+when you press Ctrl+N in the IDE.
+ 
+Presently, the wizard.script sets the file to have a comment and license
+block that is hard-coded. You can change it by editing the script 
+(assign the copyright to yourself, please!). 
+ 
+Sadly, the "default code" feature of the Settings > Editor menu is specific 
+only to C and C++, and requires a recompile of the C::B sources to change.
+If you'd like to help, see about making that code more flexible.
