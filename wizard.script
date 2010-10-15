@@ -10,6 +10,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 New_file_path <- _T( "newFile.d" );
+Save_cwd <- _T( "" );
+FILE_SEP_PATH <- wxFILE_SEP_PATH.GetChar( 0 );
+DOT <- '.';
+wxDOT <- _T( "." );
 
 function BeginWizard()
 {
@@ -20,7 +24,7 @@ function BeginWizard()
 	);
 
 	local active_file = GetEditorManager().GetActiveEditor().GetFilename();
-	local path = active_file.BeforeLast( wxFILE_SEP_PATH.GetChar( 0 ) );
+	local path = active_file.BeforeLast( FILE_SEP_PATH );
 
 	if( path.length() != 0 ) {
 		New_file_path = path
@@ -35,13 +39,85 @@ function BeginWizard()
 }
 
 function OnEnter_FilePathPage( is_forward ) {
+
 	if( is_forward ) {
+		// Save the cwd, and cd to file-dir
+		Save_cwd = IO.GetCwd();
+		IO.SetCwd( New_file_path.BeforeLast( FILE_SEP_PATH ) );
+
 		Wizard.SetFilePathSelectionFilter( _T("D sources (*.d; *.di)|*.d;*.di") );
 		Wizard.SetTextControlValue( _T( "ID_TEXTCTRL1" ), New_file_path );
 	}
 }
 
+function OnLeave_FilePathPath( is_forward ) {
+
+	if( is_forward ) {
+		// Restore cwd
+		IO.SetCwd( Save_cwd );
+	}
+}
+
+function compare_wxstrings( left, right ) {
+	//Log( _T( "\nComparing strings |" )
+	//	+ left + _T( "| and |" ) + right +_T( "|" ) );
+
+	if( left != right ) { Log( _T( "\tdifferent" ) ); } else { Log( _T( "\t! different" ) ); }
+	if( left > right ) { Log( _T( "\tgreater" ) ); } else { Log( _T( "\t! greater" ) ); }
+	if( left < right ) { Log( _T( "\tlesser" ) ); } else { Log( _T( "\t! lesser" ) ); }
+	if( left == right ) { Log( _T( "\tsame" ) ); } else { Log( _T( "\t! same" ) ); }
+
+}
+// WTF? This is provided by wxWidgets, but stupid CB developers didn't bind it?
+function starts_with( long_str, short_str ) {
+
+	local length = short_str.length();
+	local prefix = long_str.Mid( 0, length );
+
+	// This is incredibly bogus. But needful.
+	return prefix >= short_str && short_str >= prefix;
+}
+
+function get_relative_path( path ) {
+
+	local project = GetProjectManager().GetActiveProject();
+	local proj_dir = project.GetCommonTopLevelPath();
+
+	if( ! starts_with( path, proj_dir ) ) {
+		ShowWarning(
+			_T( "The file you have selected is not under the active project path. "
+			"You will have to adjust the \\file and module info by hand.\n" ) );
+
+		return path;
+	}
+	else {
+		local relative_path = path.Mid( proj_dir.length(), -1 );
+		return relative_path;
+	}
+}
+
+function module_name_from_relative_path( relative_path ) {
+	// relative_path = "foo/bar/baz.d"
+	local module_name = relative_path.BeforeLast( DOT );
+	// module_name = "foo/bar/baz"
+	module_name.Replace( wxFILE_SEP_PATH, wxDOT, true );
+	// module_name = "foo.bar.baz"
+
+	if( starts_with( module_name, _T( "source." ) )
+		|| starts_with( module_name, _T( "sources." ) )
+		|| starts_with( module_name, _T( "srcs." ) )
+		|| starts_with( module_name, _T( "src." ) )
+		|| starts_with( module_name, _T( "t." ) )
+		|| starts_with( module_name, _T( "tests." ) ) ) {
+		// NB: I didn't include "test." on purpose - it could go either way.
+		module_name = module_name.AfterFirst( DOT );
+	}
+
+	return module_name;
+}
+
 function CreateFiles() {
+
 	local ed    = GetEditorManager();
 
 	if (IsNull(ed)) {
@@ -60,31 +136,38 @@ function CreateFiles() {
 	else { // succeeded -> add file to project if needed
 		if( ed_new.GetText().IsEmpty() ) {
 			local shortname = ed_new.GetShortName();
-			local basename = shortname.BeforeFirst( '.' );
+			local basename = shortname.BeforeLast( '.' );
+
+			local relative_path = get_relative_path( fname );
+			local module_name = module_name_from_relative_path( relative_path );
 
 			local default_text = _T( "// $Id: $\n"
 			+ "/**\n"
-			+ "\\file @SHORTNAME@\n"
-			+ "*/\n"
-			+ "/*\n"
-			+ "Copyright 2010 Austin Hastings. All rights reserved.\n"
+			+ "\\file @RELATIVE_PATH@\n"
 			+ "\n"
+			+ "Implements ...\n"
+			+ "\n"
+			+ "\\copyright 2010 Austin Hastings. All rights reserved.\n"
+			+ "\n"
+			+ "\\license\n"
 			+ "This program is free software: you can redistribute it and/or modify it under\n"
 			+ "the terms of the GNU General Public License as published by the Free Software\n"
 			+ "Foundation, either version 3 of the License, or (at your option) any later version.\n"
-			+ "\n"
+			+ "\\par\n"
 			+ "This program is distributed in the hope that it will be useful, but without any\n"
 			+ "warranty; without even the implied warranty of merchantability or fitness for a\n"
 			+ "particular purpose. see the GNU General Public License for more details.\n"
-			+ "\n"
+			+ "\\par\n"
 			+ "You should have received a copy of the GNU General Public License along with\n"
 			+ "this program. If not, see <http://www.gnu.org/licenses/>.\n"
 			+ "*/\n"
-			+ "module @BASENAME@;\n"
+			+ "module @MODULE_NAME@;\n"
 			+ "\n");
 
-			default_text.Replace( _T("@SHORTNAME@"), shortname );
 			default_text.Replace( _T("@BASENAME@"), basename );
+			default_text.Replace( _T("@MODULE_NAME@"), module_name );
+			default_text.Replace( _T("@RELATIVE_PATH@"), relative_path);
+			default_text.Replace( _T("@SHORTNAME@"), shortname );
 			ed_new.SetText( default_text );
 		}
 
